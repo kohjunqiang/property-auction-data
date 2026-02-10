@@ -3,35 +3,7 @@
 import { db } from '@repo/database';
 import { CredentialsSchema } from '@repo/schema';
 import { encryptCredentials, decryptCredentials, isEncryptedFormat, type EncryptedData } from '@repo/crypto';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-
-async function getAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  // Always verify with Supabase server for security
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return null;
-  }
-  return user;
-}
+import { getSessionUser, getVerifiedUser } from './_auth';
 
 /**
  * Save auction site credentials for the authenticated user (encrypted)
@@ -40,7 +12,8 @@ export async function saveCredentials(username: string, password: string, target
   // Validate input
   const validated = CredentialsSchema.parse({ username, password, targetUrl });
 
-  const user = await getAuthenticatedUser();
+  // Use verified auth for write operations
+  const user = await getVerifiedUser();
   if (!user) {
     throw new Error('Not authenticated');
   }
@@ -124,15 +97,11 @@ export interface CredentialsInfo {
 }
 
 /**
- * Get saved credentials for the authenticated user
- * Returns username visible, status, but only indicates password exists (for security)
- */
-/**
  * Lightweight check: are credentials and targetUrl configured?
  * Does NOT decrypt — safe to call without CREDENTIALS_ENCRYPTION_KEY.
  */
 export async function hasCredentialsConfigured(): Promise<boolean> {
-  const user = await getAuthenticatedUser();
+  const user = await getSessionUser();
   if (!user) return false;
 
   const dbUser = await db
@@ -155,7 +124,7 @@ export async function hasCredentialsConfigured(): Promise<boolean> {
 }
 
 export async function getCredentials(): Promise<CredentialsInfo | null> {
-  const user = await getAuthenticatedUser();
+  const user = await getSessionUser();
   if (!user) {
     throw new Error('Not authenticated');
   }

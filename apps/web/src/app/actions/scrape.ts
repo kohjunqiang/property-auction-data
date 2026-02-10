@@ -1,8 +1,7 @@
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { db } from '@repo/database';
+import { getSessionUser, getSession } from './_auth';
 
 export interface ScrapeJob {
   id: string;
@@ -15,34 +14,9 @@ export interface ScrapeJob {
 }
 
 export async function startScrape() {
-  // Get authenticated session
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error || !session) {
-    throw new Error('Not authenticated');
-  }
-
-  // Verify the user is authentic (getSession reads from cookies, getUser validates with server)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  // Get session for access token — backend validates the JWT itself
+  const session = await getSession();
+  if (!session) {
     throw new Error('Not authenticated');
   }
 
@@ -62,31 +36,8 @@ export async function startScrape() {
   return response.json();
 }
 
-async function getAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-  return user ?? null;
-}
-
 export async function getScrapeJobs(): Promise<ScrapeJob[]> {
-  const user = await getAuthenticatedUser();
+  const user = await getSessionUser();
   if (!user) {
     throw new Error('Not authenticated');
   }

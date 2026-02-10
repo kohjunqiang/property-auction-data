@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
@@ -15,8 +15,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getScrapeJobs, type ScrapeJob } from '@/app/actions/scrape';
+import type { ScrapeJob } from '@/app/actions/scrape';
 import { getListings } from '@/app/actions/listings';
+import { useScrapeJobs } from '@/hooks/use-data';
 
 const statusConfig = {
   PENDING: {
@@ -59,8 +60,7 @@ function formatTime(date: Date): string {
 }
 
 export function ActivityTable() {
-  const [jobs, setJobs] = useState<ScrapeJob[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: jobs = [], isLoading: loading } = useScrapeJobs(true);
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
   const handleDownload = async (job: ScrapeJob) => {
@@ -81,30 +81,6 @@ export function ActivityTable() {
       setDownloadingJobId(null);
     }
   };
-
-  const fetchJobs = async () => {
-    try {
-      const data = await getScrapeJobs();
-      setJobs(data);
-    } catch (err) {
-      console.error('Failed to fetch scrape jobs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchJobs();
-  }, []);
-
-  // Poll every 5s when there are active jobs
-  useEffect(() => {
-    const hasActiveJobs = jobs.some(j => j.status === 'PENDING' || j.status === 'PROCESSING');
-    if (!hasActiveJobs) return;
-
-    const interval = setInterval(fetchJobs, 5000);
-    return () => clearInterval(interval);
-  }, [jobs]);
 
   return (
     <Card>

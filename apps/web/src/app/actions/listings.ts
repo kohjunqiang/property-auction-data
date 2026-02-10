@@ -1,8 +1,7 @@
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { db } from '@repo/database';
+import { getSessionUser } from './_auth';
 
 export interface Listing {
   id: string;
@@ -29,31 +28,8 @@ export interface ListingsFilter {
   scrapeJobId?: string;
 }
 
-async function getAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-  return user ?? null;
-}
-
 export async function getListings(filters?: ListingsFilter): Promise<Listing[]> {
-  const user = await getAuthenticatedUser();
+  const user = await getSessionUser();
   if (!user) {
     throw new Error('Not authenticated');
   }
@@ -76,19 +52,15 @@ export async function getListings(filters?: ListingsFilter): Promise<Listing[]> 
   if (filters?.scrapeJobId) {
     query = query.where('listings.scrape_job_id', '=', filters.scrapeJobId);
   } else {
-    // Default to latest completed scrape job
-    const latestJob = await db
-      .selectFrom('scrape_jobs')
-      .where('scrape_jobs.user_id', '=', user.id)
-      .where('scrape_jobs.status', '=', 'COMPLETED')
-      .orderBy('scrape_jobs.created_at', 'desc')
-      .select('scrape_jobs.id')
-      .limit(1)
-      .executeTakeFirst();
-
-    if (latestJob) {
-      query = query.where('listings.scrape_job_id', '=', latestJob.id);
-    }
+    // Default to latest completed scrape job (single subquery instead of 2 queries)
+    query = query.where('listings.scrape_job_id', 'in',
+      db.selectFrom('scrape_jobs')
+        .where('scrape_jobs.user_id', '=', user.id)
+        .where('scrape_jobs.status', '=', 'COMPLETED')
+        .orderBy('scrape_jobs.created_at', 'desc')
+        .select('scrape_jobs.id')
+        .limit(1)
+    );
   }
 
   const listings = await query.execute();

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -9,9 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
-import { startScrape, getScrapeJobs, type ScrapeJob } from '@/app/actions/scrape';
-import { getListings, type Listing, type ListingsFilter } from '@/app/actions/listings';
-import { hasCredentialsConfigured } from '@/app/actions/user';
+import { startScrape } from '@/app/actions/scrape';
+import type { Listing, ListingsFilter } from '@/app/actions/listings';
+import { useScrapeJobs, useListings, useHasCredentials, revalidateScrapeJobs, revalidateListings } from '@/hooks/use-data';
 
 function ListingStatusBadge({ status }: { status: Listing['status'] }) {
   const variants: Record<Listing['status'], 'default' | 'secondary' | 'destructive'> = {
@@ -115,14 +115,43 @@ function SortableHeader({
 
 export function DataExtraction() {
   const [isExtracting, setIsExtracting] = useState(false);
-  const [activeJob, setActiveJob] = useState<ScrapeJob | null>(null);
-  const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [tenureFilter, setTenureFilter] = useState<string>('all');
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  // SWR hooks — cached, deduplicated, auto-polling
+  const { data: hasCredentials } = useHasCredentials();
+  const { data: jobs } = useScrapeJobs(true);
+
+  const filters = useMemo<ListingsFilter | undefined>(() => {
+    const f: ListingsFilter = {};
+    if (statusFilter !== 'all') f.status = statusFilter as ListingsFilter['status'];
+    if (tenureFilter !== 'all') f.tenure = tenureFilter as ListingsFilter['tenure'];
+    return Object.keys(f).length > 0 ? f : undefined;
+  }, [statusFilter, tenureFilter]);
+
+  const { data: listings = [], isLoading: loading } = useListings(filters);
+
+  const activeJob = jobs?.find(j => j.status === 'PENDING' || j.status === 'PROCESSING') ?? null;
+
+  // Track previous active job to detect completion
+  const prevActiveJobRef = useRef(activeJob);
+  useEffect(() => {
+    const prev = prevActiveJobRef.current;
+    prevActiveJobRef.current = activeJob;
+
+    if (prev && !activeJob && jobs) {
+      // Job was active, now it's not — check what happened
+      const finishedJob = jobs.find(j => j.id === prev.id);
+      if (finishedJob?.status === 'COMPLETED') {
+        toast.success(`Extraction complete — ${finishedJob.totalRecords ?? 0} listings found`);
+        revalidateListings();
+      } else if (finishedJob?.status === 'FAILED') {
+        toast.error(finishedJob.error || 'Extraction failed');
+      }
+    }
+  }, [activeJob, jobs]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -155,53 +184,11 @@ export function DataExtraction() {
     }
   });
 
-  const fetchListings = async () => {
-    try {
-      setLoading(true);
-      const filters: ListingsFilter = {};
-      if (statusFilter !== 'all') {
-        filters.status = statusFilter as ListingsFilter['status'];
-      }
-      if (tenureFilter !== 'all') {
-        filters.tenure = tenureFilter as ListingsFilter['tenure'];
-      }
-      const data = await getListings(filters);
-      setListings(data);
-    } catch (err) {
-      console.error('Failed to fetch listings:', err);
-      toast.error('Failed to fetch listings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Check credentials and active jobs on mount
-  useEffect(() => {
-    hasCredentialsConfigured()
-      .then((result) => setHasCredentials(result))
-      .catch(() => setHasCredentials(false));
-
-    getScrapeJobs().then((jobs) => {
-      const active = jobs.find(j => j.status === 'PENDING' || j.status === 'PROCESSING');
-      if (active) setActiveJob(active);
-    }).catch(() => {});
-  }, []);
-
-  // Initial fetch and refetch when filters change
-  useEffect(() => {
-    fetchListings();
-  }, [statusFilter, tenureFilter]);
-
   const handleStartExtraction = async () => {
     setIsExtracting(true);
     try {
       await startScrape();
-      // Fetch the newly created job to start tracking it
-      const jobs = await getScrapeJobs();
-      const latestJob = jobs[0]; // Most recent (sorted by created_at DESC)
-      if (latestJob && (latestJob.status === 'PENDING' || latestJob.status === 'PROCESSING')) {
-        setActiveJob(latestJob);
-      }
+      await revalidateScrapeJobs();
       toast.success('Extraction started');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to start extraction');
@@ -209,34 +196,6 @@ export function DataExtraction() {
       setIsExtracting(false);
     }
   };
-
-  // Poll for active job status
-  useEffect(() => {
-    if (!activeJob || (activeJob.status !== 'PENDING' && activeJob.status !== 'PROCESSING')) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const jobs = await getScrapeJobs();
-        const job = jobs.find(j => j.id === activeJob.id);
-        if (!job) return;
-
-        if (job.status === 'COMPLETED') {
-          setActiveJob(null);
-          toast.success(`Extraction complete — ${job.totalRecords ?? 0} listings found`);
-          fetchListings();
-        } else if (job.status === 'FAILED') {
-          setActiveJob(null);
-          toast.error(job.error || 'Extraction failed');
-        } else {
-          setActiveJob(job);
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [activeJob]);
 
   const exportToExcel = () => {
     if (listings.length === 0) {
