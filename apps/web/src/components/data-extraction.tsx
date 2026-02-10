@@ -7,8 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+import { exportListingsToExcel } from '@/lib/export';
 import { startScrape, getScrapeJobs, type ScrapeJob } from '@/app/actions/scrape';
 import { getListings, type Listing, type ListingsFilter } from '@/app/actions/listings';
 import { hasCredentialsConfigured } from '@/app/actions/user';
@@ -243,27 +243,8 @@ export function DataExtraction() {
       toast.error('No data to export');
       return;
     }
-    const worksheet = XLSX.utils.json_to_sheet(
-      listings.map((listing) => ({
-        'Unit Address': listing.address,
-        'House Type': listing.homeType,
-        'Currency': listing.currency,
-        'Reserve Price': listing.price,
-        'Market Value': listing.marketValue,
-        'Auction Date': formatDate(listing.auctionDate),
-        'Tenure': listing.tenure,
-        'Land Area': listing.landArea,
-        'Land Area Unit': listing.landAreaUnit,
-        'Registered Investors': listing.registeredInvestor,
-        'Entry Created': formatDate(listing.entryCreated),
-        'Status': listing.status,
-      }))
-    );
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Listings');
-    const fileName = `property_listings_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-    toast.success(`Exported ${listings.length} listings to ${fileName}`);
+    const { fileName, count } = exportListingsToExcel(listings);
+    toast.success(`Exported ${count} listings to ${fileName}`);
   };
 
   if (loading) {

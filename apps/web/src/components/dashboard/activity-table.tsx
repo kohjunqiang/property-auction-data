@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History } from 'lucide-react';
+import { toast } from 'sonner';
+import { exportListingsToExcel } from '@/lib/export';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getScrapeJobs, type ScrapeJob } from '@/app/actions/scrape';
+import { getListings } from '@/app/actions/listings';
 
 const statusConfig = {
   PENDING: {
@@ -58,6 +61,26 @@ function formatTime(date: Date): string {
 export function ActivityTable() {
   const [jobs, setJobs] = useState<ScrapeJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
+
+  const handleDownload = async (job: ScrapeJob) => {
+    setDownloadingJobId(job.id);
+    try {
+      const listings = await getListings({ scrapeJobId: job.id });
+      if (listings.length === 0) {
+        toast.error('No listings found for this job');
+        return;
+      }
+      const dateStr = new Date(job.createdAt).toISOString().split('T')[0];
+      const { fileName, count } = exportListingsToExcel(listings, dateStr);
+      toast.success(`Exported ${count} listings to ${fileName}`);
+    } catch (err) {
+      toast.error('Failed to download listings');
+      console.error('Download failed:', err);
+    } finally {
+      setDownloadingJobId(null);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -148,9 +171,14 @@ export function ActivityTable() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={job.status !== 'COMPLETED'}
+                          disabled={job.status !== 'COMPLETED' || downloadingJobId === job.id}
+                          onClick={() => handleDownload(job)}
                         >
-                          <Download className="mr-1 h-4 w-4" />
+                          {downloadingJobId === job.id ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="mr-1 h-4 w-4" />
+                          )}
                           Download
                         </Button>
                       </TableCell>

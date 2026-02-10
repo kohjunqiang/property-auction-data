@@ -75,6 +75,20 @@ export async function getListings(filters?: ListingsFilter): Promise<Listing[]> 
   }
   if (filters?.scrapeJobId) {
     query = query.where('listings.scrape_job_id', '=', filters.scrapeJobId);
+  } else {
+    // Default to latest completed scrape job
+    const latestJob = await db
+      .selectFrom('scrape_jobs')
+      .where('scrape_jobs.user_id', '=', user.id)
+      .where('scrape_jobs.status', '=', 'COMPLETED')
+      .orderBy('scrape_jobs.created_at', 'desc')
+      .select('scrape_jobs.id')
+      .limit(1)
+      .executeTakeFirst();
+
+    if (latestJob) {
+      query = query.where('listings.scrape_job_id', '=', latestJob.id);
+    }
   }
 
   const listings = await query.execute();
