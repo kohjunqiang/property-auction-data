@@ -37,7 +37,7 @@ COPY --from=builder /app/apps/api ./apps/api
 RUN pnpm install --frozen-lockfile --prod
 
 # Install Playwright Chromium and its system dependencies
-RUN pnpm exec playwright install --with-deps chromium
+RUN cd apps/api && pnpm exec playwright install --with-deps chromium
 
 # Railway injects PORT at runtime
 EXPOSE ${PORT}
