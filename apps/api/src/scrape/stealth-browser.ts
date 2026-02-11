@@ -39,7 +39,7 @@ interface StealthBrowserOptions {
 export async function launchStealthBrowser(
   options?: StealthBrowserOptions,
 ): Promise<StealthBrowserResult> {
-  const headless = options?.headless ?? process.env.HEADLESS_MODE === 'true';
+  const headless = options?.headless ?? process.env.HEADLESS_MODE !== 'false';
   const viewport = VIEWPORT_PRESETS[Math.floor(Math.random() * VIEWPORT_PRESETS.length)];
   const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 

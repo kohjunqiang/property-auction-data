@@ -63,7 +63,7 @@ export async function getListings(filters?: ListingsFilter): Promise<Listing[]> 
     );
   }
 
-  const listings = await query.execute();
+  const listings = await query.limit(5000).execute();
 
   // Transform snake_case to camelCase
   return listings.map(listing => ({
@@ -71,17 +71,17 @@ export async function getListings(filters?: ListingsFilter): Promise<Listing[]> 
     address: listing.address,
     homeType: listing.home_type,
     currency: listing.currency,
-    price: Number(listing.price),
-    marketValue: Number(listing.market_value),
-    auctionDate: new Date(listing.auction_date),
+    price: Number(listing.price) || 0,
+    marketValue: Number(listing.market_value) || 0,
+    auctionDate: listing.auction_date ? new Date(listing.auction_date) : new Date(0),
     tenure: listing.tenure as Listing['tenure'],
-    landArea: Number(listing.land_area),
+    landArea: Number(listing.land_area) || 0,
     landAreaUnit: listing.land_area_unit,
     registeredInvestor: listing.registered_investor,
-    entryCreated: new Date(listing.entry_created),
+    entryCreated: listing.entry_created ? new Date(listing.entry_created) : new Date(0),
     status: listing.status as Listing['status'],
     scrapeJobId: listing.scrape_job_id,
-    createdAt: new Date(listing.created_at),
-    updatedAt: new Date(listing.updated_at),
+    createdAt: listing.created_at ? new Date(listing.created_at) : new Date(),
+    updatedAt: listing.updated_at ? new Date(listing.updated_at) : new Date(),
   }));
 }

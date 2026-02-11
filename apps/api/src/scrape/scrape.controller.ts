@@ -29,15 +29,35 @@ export class ScrapeController {
     // Decrypt credentials
     let creds: { username: string; password: string; targetUrl?: string };
     const userRecord = dbUser as typeof dbUser & { creds_encrypted?: boolean };
-    if (userRecord.creds_encrypted && isEncryptedFormat(dbUser.creds)) {
-      creds = decryptCredentials(dbUser.creds as unknown as EncryptedData);
-    } else {
-      creds = dbUser.creds as unknown as { username: string; password: string; targetUrl?: string };
+    try {
+      if (userRecord.creds_encrypted && isEncryptedFormat(dbUser.creds)) {
+        creds = decryptCredentials(dbUser.creds as unknown as EncryptedData);
+      } else {
+        creds = dbUser.creds as unknown as { username: string; password: string; targetUrl?: string };
+      }
+    } catch {
+      throw new BadRequestException(
+        'Failed to read your saved credentials. Please re-enter them in Settings.',
+      );
     }
 
     // Empty Settings Guard - check targetUrl exists
     if (!creds.targetUrl) {
       throw new BadRequestException('Please configure your Target URL in Settings first.');
+    }
+
+    // Concurrent scrape guard - only one active job per user
+    const activeJob = await this.db
+      .selectFrom('scrape_jobs')
+      .select('id')
+      .where('user_id', '=', user.id)
+      .where('status', 'in', ['PENDING', 'PROCESSING'])
+      .executeTakeFirst();
+
+    if (activeJob) {
+      throw new BadRequestException(
+        'A scrape job is already in progress. Please wait for it to complete.',
+      );
     }
 
     // Create ScrapeJob record in database
@@ -55,12 +75,20 @@ export class ScrapeController {
       })
       .execute();
 
-    // Add job to PGMQ queue
-    await this.queueService.addJob(process.env.SCRAPE_QUEUE_NAME!, {
-      jobId: jobId,
-      userId: user.id,
-      url: creds.targetUrl,
-    });
+    // Add job to PGMQ queue - if this fails, clean up the orphaned DB record
+    try {
+      await this.queueService.addJob(process.env.SCRAPE_QUEUE_NAME!, {
+        jobId: jobId,
+        userId: user.id,
+        url: creds.targetUrl,
+      });
+    } catch (error) {
+      await this.db
+        .deleteFrom('scrape_jobs')
+        .where('id', '=', jobId)
+        .execute();
+      throw error;
+    }
 
     return { jobId: jobId, status: 'QUEUED' };
   }

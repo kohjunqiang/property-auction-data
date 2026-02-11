@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CredentialsSchema } from '@repo/schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +15,7 @@ function StatusBadge({ status, updatedAt }: { status: CredsStatus; updatedAt: Da
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      timeZone: 'Asia/Singapore',
     }).format(new Date(date));
   };
 
@@ -93,19 +93,18 @@ export function CredentialsForm() {
     setLoading(true);
 
     try {
-      // Client-side Zod validation
-      const result = CredentialsSchema.safeParse({
-        username,
-        password,
-        targetUrl: targetUrl || undefined
-      });
-      if (!result.success) {
-        setError(result.error.errors[0].message);
+      // Client-side validation
+      if (!username) {
+        setError('Username is required');
+        return;
+      }
+      if (!hasExistingPassword && !password) {
+        setError('Password is required');
         return;
       }
 
-      // Save credentials via server action
-      await saveCredentials(username, password, targetUrl || undefined);
+      // Save credentials via server action (server merges existing password if omitted)
+      await saveCredentials(username, password || null, targetUrl || undefined);
       setSuccess(true);
       setHasExistingPassword(true);
       setCredsStatus('unknown'); // Reset status after save
@@ -193,7 +192,9 @@ export function CredentialsForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="targetUrl">Target URL</Label>
+            <Label htmlFor="targetUrl">
+              Target URL <span className="text-destructive">*</span>
+            </Label>
             <Input
               id="targetUrl"
               type="url"
@@ -202,7 +203,7 @@ export function CredentialsForm() {
               onChange={(e) => setTargetUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              The auction listing page URL to scrape.
+              Required. The auction listing page URL to scrape.
             </p>
           </div>
 

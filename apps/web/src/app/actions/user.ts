@@ -8,15 +8,40 @@ import { getSessionUser, getVerifiedUser } from './_auth';
 /**
  * Save auction site credentials for the authenticated user (encrypted)
  */
-export async function saveCredentials(username: string, password: string, targetUrl?: string) {
-  // Validate input
-  const validated = CredentialsSchema.parse({ username, password, targetUrl });
-
+export async function saveCredentials(username: string, password: string | null, targetUrl?: string) {
   // Use verified auth for write operations
   const user = await getVerifiedUser();
   if (!user) {
     throw new Error('Not authenticated');
   }
+
+  // If password is empty/null, keep existing password
+  let effectivePassword = password;
+  if (!effectivePassword) {
+    const dbUser = await db
+      .selectFrom('users')
+      .selectAll()
+      .where('auth_uid', '=', user.id)
+      .executeTakeFirst();
+
+    if (dbUser?.creds) {
+      const userRecord = dbUser as typeof dbUser & { creds_encrypted?: boolean };
+      let existing: { username: string; password: string; targetUrl?: string };
+      if (userRecord.creds_encrypted && isEncryptedFormat(dbUser.creds)) {
+        existing = decryptCredentials(dbUser.creds as unknown as EncryptedData);
+      } else {
+        existing = dbUser.creds as unknown as { username: string; password: string; targetUrl?: string };
+      }
+      effectivePassword = existing.password;
+    }
+
+    if (!effectivePassword) {
+      throw new Error('Password is required');
+    }
+  }
+
+  // Validate input
+  const validated = CredentialsSchema.parse({ username, password: effectivePassword, targetUrl });
 
   // Encrypt credentials
   const encryptedCreds = encryptCredentials(validated);
@@ -53,8 +78,8 @@ export async function saveCredentials(username: string, password: string, target
         } as any)
         .where('auth_uid', '=', user.id)
         .execute();
-    } catch {
-      // Columns don't exist yet - migration hasn't run
+    } catch (error) {
+      console.error('Failed to set creds_encrypted/creds_status columns:', error);
     }
   } else {
     // Update existing user credentials
@@ -78,8 +103,8 @@ export async function saveCredentials(username: string, password: string, target
         } as any)
         .where('auth_uid', '=', user.id)
         .execute();
-    } catch {
-      // Columns don't exist yet - migration hasn't run
+    } catch (error) {
+      console.error('Failed to set creds_encrypted/creds_status columns:', error);
     }
   }
 

@@ -60,7 +60,7 @@ function formatTime(date: Date): string {
 }
 
 export function ActivityTable() {
-  const { data: jobs = [], isLoading: loading } = useScrapeJobs(true);
+  const { data: jobs = [], isLoading: loading, error } = useScrapeJobs(true);
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
   const handleDownload = async (job: ScrapeJob) => {
@@ -96,6 +96,10 @@ export function ActivityTable() {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : error ? (
+          <p className="text-sm text-destructive text-center py-8">
+            Failed to load scrape history. Please try refreshing.
+          </p>
         ) : jobs.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No scrape jobs yet. Start an extraction from the Data Extraction tab.
@@ -113,7 +117,11 @@ export function ActivityTable() {
               </TableHeader>
               <TableBody>
                 {jobs.map((job) => {
-                  const status = statusConfig[job.status];
+                  const status = statusConfig[job.status as keyof typeof statusConfig] ?? {
+                    icon: AlertCircle,
+                    label: job.status,
+                    className: 'text-gray-600 bg-gray-50',
+                  };
                   const StatusIcon = status.icon;
                   return (
                     <TableRow key={job.id}>

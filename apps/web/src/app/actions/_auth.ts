@@ -23,26 +23,16 @@ function createSupabaseClient(cookieStore: Awaited<ReturnType<typeof cookies>>) 
 }
 
 /**
- * Fast auth for read-only actions. Reads JWT from cookie (no network call).
- * Use for: getListings, getScrapeJobs, hasCredentialsConfigured, getCredentials
+ * Validated auth via getUser() — contacts Supabase server to verify JWT.
  */
 export async function getSessionUser() {
-  const cookieStore = await cookies();
-  const supabase = createSupabaseClient(cookieStore);
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.user ?? null;
-}
-
-/**
- * Secure auth for write actions. Validates JWT with Supabase server (network call).
- * Use for: startScrape, saveCredentials
- */
-export async function getVerifiedUser() {
   const cookieStore = await cookies();
   const supabase = createSupabaseClient(cookieStore);
   const { data: { user } } = await supabase.auth.getUser();
   return user ?? null;
 }
+
+export const getVerifiedUser = getSessionUser;
 
 /**
  * Get session with access token for forwarding to backend API.

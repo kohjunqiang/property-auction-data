@@ -29,8 +29,12 @@ export async function startScrape() {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to create scrape job');
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to create scrape job');
+    }
+    throw new Error(`Failed to create scrape job (HTTP ${response.status})`);
   }
 
   return response.json();

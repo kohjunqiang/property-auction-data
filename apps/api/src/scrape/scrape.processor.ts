@@ -1,5 +1,5 @@
-import { Injectable, OnModuleInit, Inject } from '@nestjs/common';
-import { type Page } from 'playwright';
+import { Injectable, OnModuleInit, OnModuleDestroy, Inject } from '@nestjs/common';
+import { type Page, type Browser } from 'playwright';
 import { QueueService } from '../queue/queue.service';
 import { Kysely } from 'kysely';
 import { DB, createId } from '@repo/database';
@@ -30,8 +30,15 @@ interface RawListing {
   createdDate: string;
 }
 
+const STUCK_JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const STUCK_JOB_CHECK_INTERVAL_MS = 60 * 1000; // Check every 60s
+const JOB_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+
 @Injectable()
-export class ScrapeProcessor implements OnModuleInit {
+export class ScrapeProcessor implements OnModuleInit, OnModuleDestroy {
+  private stuckJobInterval: NodeJS.Timeout | null = null;
+  private activeBrowser: Browser | null = null;
+
   constructor(
     private readonly queueService: QueueService,
     @Inject('DATABASE') private db: Kysely<DB>,
@@ -49,8 +56,8 @@ export class ScrapeProcessor implements OnModuleInit {
         .where('id', '=', userId)
         .execute();
       console.log(`Updated credentials status to '${status}' for user ${userId}`);
-    } catch {
-      // Column may not exist yet - migration hasn't run
+    } catch (error) {
+      console.error(`Failed to update creds_status for user ${userId}:`, error);
     }
   }
 
@@ -114,7 +121,44 @@ export class ScrapeProcessor implements OnModuleInit {
     });
   }
 
+  private async sweepStuckJobs() {
+    try {
+      const cutoff = new Date(Date.now() - STUCK_JOB_TIMEOUT_MS);
+      const result = await this.db
+        .updateTable('scrape_jobs')
+        .set({
+          status: 'FAILED',
+          error: 'Job timed out (stuck in PROCESSING)',
+          completed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where('status', '=', 'PROCESSING')
+        .where('started_at', '<', cutoff)
+        .execute();
+
+      const count = Number(result[0]?.numUpdatedRows ?? 0);
+      if (count > 0) {
+        console.log(`Swept ${count} stuck PROCESSING jobs`);
+      }
+    } catch (error) {
+      console.error('Error sweeping stuck jobs:', error);
+    }
+  }
+
+  async onModuleDestroy() {
+    if (this.stuckJobInterval) {
+      clearInterval(this.stuckJobInterval);
+    }
+  }
+
   async onModuleInit() {
+    // Sweep stuck jobs on startup and periodically
+    await this.sweepStuckJobs();
+    this.stuckJobInterval = setInterval(
+      () => this.sweepStuckJobs(),
+      STUCK_JOB_CHECK_INTERVAL_MS,
+    );
+
     // Subscribe to scrape queue
     await this.queueService.subscribe(process.env.SCRAPE_QUEUE_NAME!, async (job) => {
       const data = job.data as ScrapeJobData;
@@ -137,16 +181,20 @@ export class ScrapeProcessor implements OnModuleInit {
         await this.processJob(data);
       } catch (error) {
         console.error(`Job ${data.jobId} failed:`, error);
-        await this.db
-          .updateTable('scrape_jobs')
-          .set({
-            status: 'FAILED',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            completed_at: new Date(),
-            updated_at: new Date(),
-          })
-          .where('id', '=', data.jobId)
-          .execute();
+        try {
+          await this.db
+            .updateTable('scrape_jobs')
+            .set({
+              status: 'FAILED',
+              error: error instanceof Error ? error.message : 'Unknown error',
+              completed_at: new Date(),
+              updated_at: new Date(),
+            })
+            .where('id', '=', data.jobId)
+            .execute();
+        } catch (dbError) {
+          console.error(`Job ${data.jobId} - Failed to update job status to FAILED:`, dbError);
+        }
       }
     });
   }
@@ -199,6 +247,13 @@ export class ScrapeProcessor implements OnModuleInit {
 
     // Launch stealth browser
     const { browser, context, page } = await launchStealthBrowser();
+    this.activeBrowser = browser;
+
+    // Set a timeout that force-closes the browser to abort all pending operations
+    const jobTimeout = setTimeout(async () => {
+      console.error(`Job ${data.jobId} - Force closing browser due to timeout (${JOB_TIMEOUT_MS / 1000}s)`);
+      try { await browser.close(); } catch { /* already closed */ }
+    }, JOB_TIMEOUT_MS);
 
     try {
       // --- Navigate to target URL first ---
@@ -307,14 +362,16 @@ export class ScrapeProcessor implements OnModuleInit {
 
       console.log(`Job ${data.jobId} - Total extracted: ${allListings.length} listings`);
 
-      // --- Verify scraped count matches total records ---
+      // --- Verify scraped count matches total records (warn but proceed) ---
       if (totalRecords > 0 && allListings.length !== totalRecords) {
         console.warn(
-          `Job ${data.jobId} - Mismatch: expected ${totalRecords} records but scraped ${allListings.length}`,
+          `Job ${data.jobId} - Mismatch: expected ${totalRecords} records but scraped ${allListings.length}. Proceeding with available data.`,
         );
-        throw new Error(
-          `Record count mismatch: expected ${totalRecords} but scraped ${allListings.length}`,
-        );
+        await this.db
+          .updateTable('scrape_jobs')
+          .set({ total_records: allListings.length, updated_at: new Date() })
+          .where('id', '=', data.jobId)
+          .execute();
       }
 
       // --- Insert listings into database ---
@@ -340,9 +397,9 @@ export class ScrapeProcessor implements OnModuleInit {
         };
       });
 
+      let insertedCount = 0;
+      let failedCount = 0;
       if (listingsToInsert.length > 0) {
-        let insertedCount = 0;
-        let failedCount = 0;
         for (const listing of listingsToInsert) {
           try {
             await this.db
@@ -373,19 +430,36 @@ export class ScrapeProcessor implements OnModuleInit {
         console.log(`Job ${data.jobId} - Inserted ${insertedCount}, failed ${failedCount} of ${listingsToInsert.length} listings`);
       }
 
+      // Determine final status based on insertion results
+      const totalAttempted = listingsToInsert.length;
+      const allFailed = totalAttempted > 0 && insertedCount === 0;
+
       await this.db
         .updateTable('scrape_jobs')
         .set({
-          status: 'COMPLETED',
+          status: allFailed ? 'FAILED' : 'COMPLETED',
+          error: allFailed
+            ? `All ${failedCount} listing inserts failed`
+            : failedCount > 0
+              ? `${failedCount} of ${totalAttempted} listings failed to insert`
+              : null,
           completed_at: new Date(),
           updated_at: new Date(),
         })
         .where('id', '=', data.jobId)
         .execute();
 
-      console.log(`Job ${data.jobId} completed successfully`);
+      console.log(
+        `Job ${data.jobId} ${allFailed ? 'failed' : 'completed'} - inserted ${insertedCount}, failed ${failedCount}`,
+      );
     } finally {
-      await browser.close();
+      clearTimeout(jobTimeout);
+      this.activeBrowser = null;
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error(`Job ${data.jobId} - Failed to close browser:`, closeError);
+      }
     }
   }
 }

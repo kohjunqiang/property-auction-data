@@ -122,7 +122,7 @@ export function DataExtraction() {
 
   // SWR hooks — cached, deduplicated, auto-polling
   const { data: hasCredentials } = useHasCredentials();
-  const { data: jobs } = useScrapeJobs(true);
+  const { data: jobs, error: jobsError } = useScrapeJobs(true);
 
   const filters = useMemo<ListingsFilter | undefined>(() => {
     const f: ListingsFilter = {};
@@ -131,18 +131,40 @@ export function DataExtraction() {
     return Object.keys(f).length > 0 ? f : undefined;
   }, [statusFilter, tenureFilter]);
 
-  const { data: listings = [], isLoading: loading } = useListings(filters);
+  const { data: listings = [], isLoading: loading, error: listingsError } = useListings(filters);
 
   const activeJob = jobs?.find(j => j.status === 'PENDING' || j.status === 'PROCESSING') ?? null;
 
-  // Track previous active job to detect completion
+  // Track previous active job to detect completion (survives tab switches via sessionStorage)
   const prevActiveJobRef = useRef(activeJob);
+
+  // On mount, check if a tracked job completed while this component was unmounted
+  useEffect(() => {
+    const storedJobId = sessionStorage.getItem('activeJobId');
+    if (storedJobId && !activeJob && jobs) {
+      const finishedJob = jobs.find(j => j.id === storedJobId);
+      if (finishedJob?.status === 'COMPLETED') {
+        toast.success(`Extraction complete — ${finishedJob.totalRecords ?? 0} listings found`);
+        revalidateListings();
+        sessionStorage.removeItem('activeJobId');
+      } else if (finishedJob?.status === 'FAILED') {
+        toast.error(finishedJob.error || 'Extraction failed');
+        sessionStorage.removeItem('activeJobId');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const prev = prevActiveJobRef.current;
     prevActiveJobRef.current = activeJob;
 
+    // Persist active job ID for cross-tab-switch detection
+    if (activeJob) {
+      sessionStorage.setItem('activeJobId', activeJob.id);
+    }
+
     if (prev && !activeJob && jobs) {
-      // Job was active, now it's not — check what happened
       const finishedJob = jobs.find(j => j.id === prev.id);
       if (finishedJob?.status === 'COMPLETED') {
         toast.success(`Extraction complete — ${finishedJob.totalRecords ?? 0} listings found`);
@@ -150,6 +172,7 @@ export function DataExtraction() {
       } else if (finishedJob?.status === 'FAILED') {
         toast.error(finishedJob.error || 'Extraction failed');
       }
+      sessionStorage.removeItem('activeJobId');
     }
   }, [activeJob, jobs]);
 
@@ -216,6 +239,21 @@ export function DataExtraction() {
     );
   }
 
+  if (jobsError || listingsError) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
+          <p className="text-sm text-destructive">
+            {jobsError?.message || listingsError?.message || 'Failed to load data'}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => { revalidateScrapeJobs(); revalidateListings(); }}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -227,7 +265,7 @@ export function DataExtraction() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
-            <Button onClick={handleStartExtraction} disabled={isExtracting || !!activeJob || hasCredentials === false} className="gap-2">
+            <Button onClick={handleStartExtraction} disabled={isExtracting || !!activeJob || hasCredentials !== true} className="gap-2">
               {isExtracting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />

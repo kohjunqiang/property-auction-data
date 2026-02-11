@@ -17,6 +17,7 @@ export interface PgmqSubscribeOptions {
 
 export class PgmqQueue {
   private pollingIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private activeHandlers: Set<Promise<void>> = new Set();
   private isShuttingDown = false;
 
   constructor(private db: Kysely<DB>) {}
@@ -116,7 +117,7 @@ export class PgmqQueue {
     const {
       pollIntervalMs = 1000,
       batchSize = 1,
-      visibilityTimeoutSeconds = 30,
+      visibilityTimeoutSeconds = 600,
     } = options;
 
     // Ensure queue exists
@@ -130,19 +131,25 @@ export class PgmqQueue {
         const messages = await this.readMessages(queueName, visibilityTimeoutSeconds, batchSize);
 
         for (const message of messages) {
-          try {
-            // Delete immediately to prevent re-processing during long-running jobs.
-            // Job state is tracked in the database, not the queue.
-            await this.deleteMessage(queueName, message.msg_id);
+          const handlerPromise = (async () => {
+            try {
+              await handler({
+                data: message.message,
+                id: message.msg_id,
+              });
+              // Delete only after successful processing
+              await this.deleteMessage(queueName, message.msg_id);
+            } catch (error) {
+              console.error(`Error processing message ${message.msg_id}:`, error);
+              // Message stays in queue and becomes visible again after visibility timeout
+            }
+          })();
 
-            await handler({
-              data: message.message,
-              id: message.msg_id,
-            });
-          } catch (error) {
-            console.error(`Error processing message ${message.msg_id}:`, error);
-            // Message will become visible again after visibility timeout expires
-          }
+          this.activeHandlers.add(handlerPromise);
+          handlerPromise.finally(() => this.activeHandlers.delete(handlerPromise));
+
+          // Await sequentially to maintain single-concurrency per poll cycle
+          await handlerPromise;
         }
       } catch (error) {
         console.error(`Error polling queue ${queueName}:`, error);
@@ -180,6 +187,13 @@ export class PgmqQueue {
       clearInterval(interval);
     }
     this.pollingIntervals.clear();
-    console.log('✅ PGMQ shutdown complete');
+
+    // Wait for in-flight handlers to complete
+    if (this.activeHandlers.size > 0) {
+      console.log(`Waiting for ${this.activeHandlers.size} in-flight handler(s) to complete...`);
+      await Promise.allSettled([...this.activeHandlers]);
+    }
+
+    console.log('PGMQ shutdown complete');
   }
 }
