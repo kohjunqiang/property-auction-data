@@ -10,7 +10,7 @@ import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, A
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { startScrape } from '@/app/actions/scrape';
-import type { Listing, ListingsFilter } from '@/app/actions/listings';
+import type { Listing } from '@/app/actions/listings';
 import { useScrapeJobs, useListings, useHasCredentials, revalidateScrapeJobs, revalidateListings } from '@/hooks/use-data';
 
 function ListingStatusBadge({ status }: { status: Listing['status'] }) {
@@ -124,14 +124,15 @@ export function DataExtraction() {
   const { data: hasCredentials } = useHasCredentials();
   const { data: jobs, error: jobsError } = useScrapeJobs(true);
 
-  const filters = useMemo<ListingsFilter | undefined>(() => {
-    const f: ListingsFilter = {};
-    if (statusFilter !== 'all') f.status = statusFilter as ListingsFilter['status'];
-    if (tenureFilter !== 'all') f.tenure = tenureFilter as ListingsFilter['tenure'];
-    return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, tenureFilter]);
+  const { data: allListings = [], isLoading: loading, error: listingsError } = useListings();
 
-  const { data: listings = [], isLoading: loading, error: listingsError } = useListings(filters);
+  const listings = useMemo(() => {
+    return allListings.filter((l) => {
+      if (statusFilter !== 'all' && l.status !== statusFilter) return false;
+      if (tenureFilter !== 'all' && l.tenure !== tenureFilter) return false;
+      return true;
+    });
+  }, [allListings, statusFilter, tenureFilter]);
 
   const activeJob = jobs?.find(j => j.status === 'PENDING' || j.status === 'PROCESSING') ?? null;
 
