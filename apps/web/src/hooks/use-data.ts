@@ -1,6 +1,6 @@
 import useSWR, { mutate as globalMutate } from 'swr';
 import { getScrapeJobs } from '@/app/actions/scrape';
-import { getListings, type ListingsFilter } from '@/app/actions/listings';
+import { getListings } from '@/app/actions/listings';
 import { hasCredentialsConfigured } from '@/app/actions/user';
 
 export function useScrapeJobs(pollWhileActive = false) {
@@ -16,10 +16,10 @@ export function useScrapeJobs(pollWhileActive = false) {
   });
 }
 
-export function useListings(filters?: ListingsFilter) {
-  const key = ['listings', JSON.stringify(filters ?? {})];
-  return useSWR(key, () => getListings(filters), {
+export function useListings() {
+  return useSWR('listings', () => getListings(), {
     dedupingInterval: 5000,
+    revalidateOnFocus: false,
   });
 }
 
