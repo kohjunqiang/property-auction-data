@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History } from 'lucide-react';
+import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History, TrendingUp, TrendingDown, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/table';
 import type { ScrapeJob } from '@/app/actions/scrape';
 import { getListings } from '@/app/actions/listings';
-import { useScrapeJobs } from '@/hooks/use-data';
+import { useScrapeJobs, useJobRemarkCounts } from '@/hooks/use-data';
 
 const statusConfig = {
   PENDING: {
@@ -61,6 +61,7 @@ function formatTime(date: Date): string {
 
 export function ActivityTable() {
   const { data: jobs = [], isLoading: loading, error } = useScrapeJobs(true);
+  const { data: remarkCounts } = useJobRemarkCounts();
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
   const handleDownload = async (job: ScrapeJob) => {
@@ -112,6 +113,7 @@ export function ActivityTable() {
                   <TableHead>Date & Time</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Listings</TableHead>
+                  <TableHead>Remarks</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -150,6 +152,38 @@ export function ActivityTable() {
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const counts = remarkCounts?.[job.id];
+                          if (!counts || job.status !== 'COMPLETED') {
+                            return <span className="text-muted-foreground">-</span>;
+                          }
+                          const items = [
+                            counts.new > 0 && (
+                              <span key="new" className="inline-flex items-center gap-1 text-xs text-blue-600">
+                                <Sparkles className="h-3 w-3" />
+                                {counts.new} new
+                              </span>
+                            ),
+                            counts.priceIncreased > 0 && (
+                              <span key="up" className="inline-flex items-center gap-1 text-xs text-red-600">
+                                <TrendingUp className="h-3 w-3" />
+                                {counts.priceIncreased} price up
+                              </span>
+                            ),
+                            counts.priceDecreased > 0 && (
+                              <span key="down" className="inline-flex items-center gap-1 text-xs text-green-600">
+                                <TrendingDown className="h-3 w-3" />
+                                {counts.priceDecreased} price down
+                              </span>
+                            ),
+                          ].filter(Boolean);
+                          if (items.length === 0) {
+                            return <span className="text-xs text-muted-foreground">No changes</span>;
+                          }
+                          return <div className="flex flex-col gap-1">{items}</div>;
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button

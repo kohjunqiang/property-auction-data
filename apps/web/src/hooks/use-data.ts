@@ -1,6 +1,6 @@
 import useSWR, { mutate as globalMutate } from 'swr';
 import { getScrapeJobs } from '@/app/actions/scrape';
-import { getListings } from '@/app/actions/listings';
+import { getListings, getJobRemarkCounts } from '@/app/actions/listings';
 import { hasCredentialsConfigured } from '@/app/actions/user';
 
 export function useScrapeJobs(pollWhileActive = false) {
@@ -19,6 +19,13 @@ export function useScrapeJobs(pollWhileActive = false) {
 export function useListings() {
   return useSWR('listings', () => getListings(), {
     dedupingInterval: 5000,
+    revalidateOnFocus: false,
+  });
+}
+
+export function useJobRemarkCounts() {
+  return useSWR('job-remark-counts', () => getJobRemarkCounts(), {
+    dedupingInterval: 10000,
     revalidateOnFocus: false,
   });
 }

@@ -6,11 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, History, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { startScrape } from '@/app/actions/scrape';
-import type { Listing } from '@/app/actions/listings';
+import type { Listing, RemarkType } from '@/app/actions/listings';
 import { useScrapeJobs, useListings, useHasCredentials, revalidateScrapeJobs, revalidateListings } from '@/hooks/use-data';
 
 function ListingStatusBadge({ status }: { status: Listing['status'] }) {
@@ -37,6 +38,64 @@ function TenureBadge({ tenure }: { tenure: Listing['tenure'] }) {
   };
 
   return <Badge variant={variants[tenure]}>{tenure}</Badge>;
+}
+
+function RemarkBadge({ remark }: { remark: RemarkType }) {
+  if (!remark) return null;
+
+  if (remark === 'NEW') {
+    return <Badge variant="default">New</Badge>;
+  }
+  if (remark === 'PRICE_INCREASED') {
+    return (
+      <Badge variant="destructive" className="gap-1">
+        <TrendingUp className="w-3 h-3" />
+        Price Up
+      </Badge>
+    );
+  }
+  if (remark === 'PRICE_DECREASED') {
+    return (
+      <Badge className="gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-100/80 border-emerald-200">
+        <TrendingDown className="w-3 h-3" />
+        Price Down
+      </Badge>
+    );
+  }
+  return null;
+}
+
+function PriceHistoryPopover({ listing }: { listing: Listing }) {
+  if (listing.priceHistory.length <= 1) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1 h-7 px-2">
+          <History className="w-3.5 h-3.5" />
+          {listing.priceHistory.length}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80" align="end">
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm">Price History</h4>
+          <div className="max-h-60 overflow-y-auto space-y-1">
+            {listing.priceHistory.map((entry, i) => (
+              <div
+                key={i}
+                className={`flex items-center justify-between text-sm py-1 ${i === 0 ? 'font-medium' : 'text-muted-foreground'}`}
+              >
+                <span>{formatDateTime(entry.date)}</span>
+                <span>{formatPrice(listing.currency, entry.price)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function formatPrice(currency: string, price: number): string {
@@ -117,6 +176,7 @@ export function DataExtraction() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [tenureFilter, setTenureFilter] = useState<string>('all');
+  const [remarkFilter, setRemarkFilter] = useState<string>('all');
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -130,9 +190,13 @@ export function DataExtraction() {
     return allListings.filter((l) => {
       if (statusFilter !== 'all' && l.status !== statusFilter) return false;
       if (tenureFilter !== 'all' && l.tenure !== tenureFilter) return false;
+      if (remarkFilter !== 'all') {
+        if (remarkFilter === 'NO_CHANGE' && l.remark !== null) return false;
+        if (remarkFilter !== 'NO_CHANGE' && l.remark !== remarkFilter) return false;
+      }
       return true;
     });
-  }, [allListings, statusFilter, tenureFilter]);
+  }, [allListings, statusFilter, tenureFilter, remarkFilter]);
 
   const activeJob = jobs?.find(j => j.status === 'PENDING' || j.status === 'PROCESSING') ?? null;
 
@@ -343,6 +407,21 @@ export function DataExtraction() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Remarks:</span>
+                <Select value={remarkFilter} onValueChange={setRemarkFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="PRICE_INCREASED">Price Up</SelectItem>
+                    <SelectItem value="PRICE_DECREASED">Price Down</SelectItem>
+                    <SelectItem value="NO_CHANGE">No Change</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <CardDescription>
@@ -370,6 +449,8 @@ export function DataExtraction() {
                     <SortableHeader column="landArea" label="Land Area" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
                     <SortableHeader column="registeredInvestor" label="Investors" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
                     <SortableHeader column="status" label="Status" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
+                    <TableHead>Remarks</TableHead>
+                    <TableHead>History</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -381,6 +462,15 @@ export function DataExtraction() {
                           <span className="truncate" title={listing.address}>
                             {listing.address}
                           </span>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-shrink-0 text-slate-400 hover:text-blue-600 transition-colors"
+                            title="View on Google Maps"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
                         </div>
                       </TableCell>
                       <TableCell>{listing.homeType}</TableCell>
@@ -407,6 +497,12 @@ export function DataExtraction() {
                       </TableCell>
                       <TableCell>
                         <ListingStatusBadge status={listing.status} />
+                      </TableCell>
+                      <TableCell>
+                        <RemarkBadge remark={listing.remark} />
+                      </TableCell>
+                      <TableCell>
+                        <PriceHistoryPopover listing={listing} />
                       </TableCell>
                     </TableRow>
                   ))}
