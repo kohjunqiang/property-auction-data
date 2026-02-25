@@ -290,7 +290,13 @@ export function DataExtraction() {
       toast.error('No data to export');
       return;
     }
-    const { fileName, count } = exportListingsToExcel(listings);
+    const extractedAt = listings.reduce((latest, l) =>
+      new Date(l.createdAt) > new Date(latest.createdAt) ? l : latest
+    ).createdAt;
+    const d = new Date(extractedAt);
+    const suffix = `${d.toISOString().split('T')[0]}_${d.toTimeString().slice(0, 8).replace(/:/g, '')}`;
+
+    const { fileName, count } = exportListingsToExcel(listings, suffix);
     toast.success(`Exported ${count} listings to ${fileName}`);
   };
 

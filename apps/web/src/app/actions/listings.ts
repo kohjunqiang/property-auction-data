@@ -41,6 +41,7 @@ export interface JobRemarkCounts {
   new: number;
   priceIncreased: number;
   priceDecreased: number;
+  delisted: number;
 }
 
 export async function getJobRemarkCounts(): Promise<Record<string, JobRemarkCounts>> {
@@ -88,13 +89,13 @@ export async function getJobRemarkCounts(): Promise<Record<string, JobRemarkCoun
     const currentMap = jobListingsMap.get(currentJobId);
 
     if (!currentMap) {
-      result[currentJobId] = { new: 0, priceIncreased: 0, priceDecreased: 0 };
+      result[currentJobId] = { new: 0, priceIncreased: 0, priceDecreased: 0, delisted: 0 };
       continue;
     }
 
     if (i === completedJobs.length - 1) {
       // Oldest job — no previous to compare, all are "new"
-      result[currentJobId] = { new: currentMap.size, priceIncreased: 0, priceDecreased: 0 };
+      result[currentJobId] = { new: currentMap.size, priceIncreased: 0, priceDecreased: 0, delisted: 0 };
       continue;
     }
 
@@ -116,10 +117,19 @@ export async function getJobRemarkCounts(): Promise<Record<string, JobRemarkCoun
       }
     }
 
+    // Count listings in previous job that are no longer in current job
+    let delistedCount = 0;
+    for (const address of previousMap.keys()) {
+      if (!currentMap.has(address)) {
+        delistedCount++;
+      }
+    }
+
     result[currentJobId] = {
       new: newCount,
       priceIncreased: priceIncreasedCount,
       priceDecreased: priceDecreasedCount,
+      delisted: delistedCount,
     };
   }
 

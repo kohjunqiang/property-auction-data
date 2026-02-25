@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History, TrendingUp, TrendingDown, Sparkles } from 'lucide-react';
+import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History, TrendingUp, TrendingDown, Sparkles, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { Button } from '@/components/ui/button';
@@ -176,6 +176,12 @@ export function ActivityTable() {
                               <span key="down" className="inline-flex items-center gap-1 text-xs text-green-600">
                                 <TrendingDown className="h-3 w-3" />
                                 {counts.priceDecreased} price down
+                              </span>
+                            ),
+                            counts.delisted > 0 && (
+                              <span key="delisted" className="inline-flex items-center gap-1 text-xs text-orange-600">
+                                <LogOut className="h-3 w-3" />
+                                {counts.delisted} delisted
                               </span>
                             ),
                           ].filter(Boolean);
