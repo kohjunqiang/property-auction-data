@@ -126,7 +126,7 @@ function formatLandArea(area: number, unit: string): string {
   return `${area.toLocaleString()} ${unit}`;
 }
 
-type SortColumn = 'address' | 'homeType' | 'price' | 'marketValue' | 'auctionDate' | 'tenure' | 'landArea' | 'registeredInvestor' | 'status';
+type SortColumn = 'address' | 'homeType' | 'price' | 'marketValue' | 'priceToMv' | 'auctionDate' | 'tenure' | 'landArea' | 'registeredInvestor' | 'status';
 type SortDirection = 'asc' | 'desc';
 
 function SortableHeader({
@@ -172,7 +172,7 @@ export function DataExtraction() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [tenureFilter, setTenureFilter] = useState<string>('all');
   const [remarkFilter, setRemarkFilter] = useState<string>('all');
-  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>('priceToMv');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // SWR hooks — cached, deduplicated, auto-polling
@@ -260,6 +260,8 @@ export function DataExtraction() {
       case 'landArea':
       case 'registeredInvestor':
         return multiplier * (a[sortColumn] - b[sortColumn]);
+      case 'priceToMv':
+        return multiplier * ((a.price / (a.marketValue || 1)) - (b.price / (b.marketValue || 1)));
       case 'auctionDate':
         return multiplier * (new Date(a.auctionDate).getTime() - new Date(b.auctionDate).getTime());
       default:
@@ -291,7 +293,7 @@ export function DataExtraction() {
     const d = new Date(extractedAt);
     const suffix = `${d.toISOString().split('T')[0]}_${d.toTimeString().slice(0, 8).replace(/:/g, '')}`;
 
-    const { fileName, count } = exportListingsToExcel(listings, suffix);
+    const { fileName, count } = exportListingsToExcel(sortedListings, suffix);
     toast.success(`Exported ${count} listings to ${fileName}`);
   };
 
@@ -445,6 +447,7 @@ export function DataExtraction() {
                     <SortableHeader column="homeType" label="House Type" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <SortableHeader column="price" label="Reserve Price" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
                     <SortableHeader column="marketValue" label="Market Value" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
+                    <SortableHeader column="priceToMv" label="Price/MV" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
                     <SortableHeader column="auctionDate" label="Auction Date" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <SortableHeader column="tenure" label="Tenure" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <SortableHeader column="landArea" label="Land Area" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
@@ -480,6 +483,11 @@ export function DataExtraction() {
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {formatPrice(listing.currency, listing.marketValue)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {listing.marketValue > 0
+                          ? `${Math.round((listing.price / listing.marketValue) * 100)}%`
+                          : '—'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

@@ -77,7 +77,8 @@ export function ActivityTable() {
         return;
       }
       const dateStr = new Date(job.createdAt).toISOString().split('T')[0];
-      const { fileName, count } = exportListingsToExcel(listings, dateStr);
+      const sorted = [...listings].sort((a, b) => (a.price / (a.marketValue || 1)) - (b.price / (b.marketValue || 1)));
+      const { fileName, count } = exportListingsToExcel(sorted, dateStr);
       toast.success(`Exported ${count} listings to ${fileName}`);
     } catch (err) {
       toast.error('Failed to download listings');

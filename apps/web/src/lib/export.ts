@@ -21,6 +21,9 @@ export function exportListingsToExcel(listings: Listing[], fileNameSuffix?: stri
       'Currency': listing.currency,
       'Reserve Price': listing.price,
       'Market Value': listing.marketValue,
+      'Price/MV': listing.marketValue > 0
+        ? Math.round((listing.price / listing.marketValue) * 100) + '%'
+        : '—',
       'Auction Date': formatDate(listing.auctionDate),
       'Tenure': listing.tenure,
       'Land Area': listing.landArea,
