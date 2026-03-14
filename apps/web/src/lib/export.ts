@@ -16,6 +16,7 @@ export function exportListingsToExcel(listings: Listing[], fileNameSuffix?: stri
   const worksheet = XLSX.utils.json_to_sheet(
     listings.map((listing) => ({
       'Unit Address': listing.address,
+      'Google Maps': `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.address)}`,
       'House Type': listing.homeType,
       'Currency': listing.currency,
       'Reserve Price': listing.price,
@@ -29,19 +30,6 @@ export function exportListingsToExcel(listings: Listing[], fileNameSuffix?: stri
       'Status': listing.status,
     }))
   );
-  // Add Google Maps hyperlinks to Unit Address cells (column A)
-  const range = XLSX.utils.decode_range(worksheet['!ref']!);
-  for (let row = range.s.r + 1; row <= range.e.r; row++) {
-    const cellRef = XLSX.utils.encode_cell({ r: row, c: 0 });
-    const cell = worksheet[cellRef];
-    if (cell && cell.v) {
-      cell.l = {
-        Target: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(String(cell.v))}`,
-        Tooltip: 'Open in Google Maps',
-      };
-    }
-  }
-
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Listings');
   const suffix = fileNameSuffix ?? new Date().toISOString().split('T')[0];

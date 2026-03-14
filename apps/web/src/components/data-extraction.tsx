@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, History, ExternalLink } from 'lucide-react';
+import { Download, Play, RefreshCw, Home, FileText, MapPin, Calendar, Loader2, ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown, History, ExternalLink, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { startScrape } from '@/app/actions/scrape';
@@ -15,40 +15,35 @@ import type { Listing, RemarkType } from '@/app/actions/listings';
 import { useScrapeJobs, useListings, useHasCredentials, revalidateScrapeJobs, revalidateListings } from '@/hooks/use-data';
 
 function ListingStatusBadge({ status }: { status: Listing['status'] }) {
-  const variants: Record<Listing['status'], 'default' | 'secondary' | 'destructive'> = {
-    ACTIVE: 'default',
-    RESERVED: 'secondary',
-    CALLED_OFF: 'destructive',
+  const config: Record<Listing['status'], { label: string; className: string }> = {
+    ACTIVE: { label: 'Active', className: 'bg-green-100 text-green-800 border-green-200' },
+    RESERVED: { label: 'Reserved', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+    CALLED_OFF: { label: 'Called Off', className: 'bg-red-100 text-red-800 border-red-200' },
   };
 
-  const labels: Record<Listing['status'], string> = {
-    ACTIVE: 'Active',
-    RESERVED: 'Reserved',
-    CALLED_OFF: 'Called Off',
-  };
-
-  return <Badge variant={variants[status]}>{labels[status]}</Badge>;
+  const { label, className } = config[status];
+  return <Badge className={className}>{label}</Badge>;
 }
 
 function TenureBadge({ tenure }: { tenure: Listing['tenure'] }) {
-  const variants: Record<Listing['tenure'], 'default' | 'secondary' | 'outline'> = {
-    FREEHOLD: 'default',
-    LEASEHOLD: 'secondary',
-    NONE: 'outline',
+  const config: Record<Listing['tenure'], string> = {
+    FREEHOLD: 'bg-blue-100 text-blue-800 border-blue-200',
+    LEASEHOLD: 'bg-purple-100 text-purple-800 border-purple-200',
+    NONE: 'bg-gray-100 text-gray-600 border-gray-200',
   };
 
-  return <Badge variant={variants[tenure]}>{tenure}</Badge>;
+  return <Badge className={config[tenure]}>{tenure}</Badge>;
 }
 
 function RemarkBadge({ remark }: { remark: RemarkType }) {
   if (!remark) return null;
 
   if (remark === 'NEW') {
-    return <Badge variant="default">New</Badge>;
+    return <Badge className="gap-1 bg-sky-100 text-sky-800 border-sky-200"><Sparkles className="w-3 h-3" />New</Badge>;
   }
   if (remark === 'PRICE_INCREASED') {
     return (
-      <Badge variant="destructive" className="gap-1">
+      <Badge className="gap-1 bg-red-100 text-red-800 border-red-200">
         <TrendingUp className="w-3 h-3" />
         Price Up
       </Badge>
@@ -56,7 +51,7 @@ function RemarkBadge({ remark }: { remark: RemarkType }) {
   }
   if (remark === 'PRICE_DECREASED') {
     return (
-      <Badge className="gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-100/80 border-emerald-200">
+      <Badge className="gap-1 bg-emerald-100 text-emerald-800 border-emerald-200">
         <TrendingDown className="w-3 h-3" />
         Price Down
       </Badge>
@@ -452,8 +447,8 @@ export function DataExtraction() {
                     <SortableHeader column="marketValue" label="Market Value" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
                     <SortableHeader column="auctionDate" label="Auction Date" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <SortableHeader column="tenure" label="Tenure" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
-                    <SortableHeader column="landArea" label="Land Area" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
-                    <SortableHeader column="registeredInvestor" label="Investors" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} className="text-right" />
+                    <SortableHeader column="landArea" label="Land Area" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
+                    <SortableHeader column="registeredInvestor" label="Investors" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <SortableHeader column="status" label="Status" currentSort={sortColumn} currentDirection={sortDirection} onSort={handleSort} />
                     <TableHead>Remarks</TableHead>
                     <TableHead>History</TableHead>
@@ -495,10 +490,10 @@ export function DataExtraction() {
                       <TableCell>
                         <TenureBadge tenure={listing.tenure} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
                         {formatLandArea(listing.landArea, listing.landAreaUnit)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
                         {listing.registeredInvestor}
                       </TableCell>
                       <TableCell>

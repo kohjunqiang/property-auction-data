@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History, TrendingUp, TrendingDown, Sparkles, LogOut } from 'lucide-react';
+import { Download, Clock, CheckCircle, AlertCircle, Loader2, FileText, History, TrendingUp, TrendingDown, Sparkles, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportListingsToExcel } from '@/lib/export';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,10 @@ export function ActivityTable() {
   const { data: jobs = [], isLoading: loading, error } = useScrapeJobs(true);
   const { data: remarkCounts } = useJobRemarkCounts();
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(jobs.length / PAGE_SIZE);
+  const paginatedJobs = jobs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleDownload = async (job: ScrapeJob) => {
     setDownloadingJobId(job.id);
@@ -106,6 +110,7 @@ export function ActivityTable() {
             No scrape jobs yet. Start an extraction from the Data Extraction tab.
           </p>
         ) : (
+          <>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -114,11 +119,11 @@ export function ActivityTable() {
                   <TableHead>Status</TableHead>
                   <TableHead>Total Listings</TableHead>
                   <TableHead>Remarks</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {jobs.map((job) => {
+                {paginatedJobs.map((job) => {
                   const status = statusConfig[job.status as keyof typeof statusConfig] ?? {
                     icon: AlertCircle,
                     label: job.status,
@@ -191,7 +196,7 @@ export function ActivityTable() {
                           return <div className="flex flex-col gap-1">{items}</div>;
                         })()}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -212,6 +217,22 @@ export function ActivityTable() {
               </TableBody>
             </Table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-4">
+              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
     </Card>
