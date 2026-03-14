@@ -30,6 +30,16 @@ export function exportListingsToExcel(listings: Listing[], fileNameSuffix?: stri
       'Status': listing.status,
     }))
   );
+  // Make Google Maps URLs clickable hyperlinks (column B)
+  const range = XLSX.utils.decode_range(worksheet['!ref']!);
+  for (let row = range.s.r + 1; row <= range.e.r; row++) {
+    const cellRef = XLSX.utils.encode_cell({ r: row, c: 1 });
+    const cell = worksheet[cellRef];
+    if (cell && cell.v) {
+      cell.l = { Target: String(cell.v), Tooltip: 'Open in Google Maps' };
+    }
+  }
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Listings');
   const suffix = fileNameSuffix ?? new Date().toISOString().split('T')[0];
